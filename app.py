@@ -79,6 +79,12 @@ _SQL_LIST_NOTAS_ALL: Final[str] = (
     "FROM notas n JOIN teams t ON t.id = n.team_id "
     "ORDER BY t.id, n.id"
 )
+_SQL_LIST_NOTAS_BY_TEAM: Final[str] = (
+    "SELECT n.id, n.contenido, t.display_name AS equipo "
+    "FROM notas n JOIN teams t ON t.id = n.team_id "
+    "WHERE n.team_id = %s "
+    "ORDER BY n.id"
+)
 _SQL_INSERT_NOTA: Final[str] = "INSERT INTO notas (team_id, contenido) VALUES (%s, %s)"
 
 _TITLE_NOTAS_TODAS: Final[str] = "Notas de investigación (todos los equipos)"
@@ -123,6 +129,19 @@ _TEAM_ID_BY_LIST_KEY: Final[dict[str, int]] = {
     MenuOption.LISTAR_OVNIS.value: 1,
     MenuOption.LISTAR_GHOSTS.value: 2,
     MenuOption.LISTAR_WIZARDS.value: 3,
+}
+
+# team_code en users/teams -> tabla de catalogo permitida para listar.
+_TEAM_CATALOG_BY_CODE: Final[dict[str, str]] = {
+    "ovni": Table.OVNIS,
+    "ghosts": Table.GHOSTS,
+    "wizards": Table.WIZARDS,
+}
+
+_TEAM_ID_BY_CODE: Final[dict[str, int]] = {
+    "ovni": 1,
+    "ghosts": 2,
+    "wizards": 3,
 }
 
 # Matriz objetivo del taller (Taller_Auth.md). El código actual NO la aplica.
@@ -171,6 +190,26 @@ def _assert_catalog_table(table: str) -> None:
         raise ValueError(f"Tabla de catálogo no permitida: {table!r}")
 
 
+def _can_list_catalog(user: dict[str, Any], spec: CatalogView) -> bool:
+    """Autoriza listar catálogo solo si coincide con el equipo del usuario."""
+    allowed_table = _TEAM_CATALOG_BY_CODE.get(str(user.get("team_code", "")).lower())
+    return allowed_table == spec.table
+
+
+def _team_code(user: dict[str, Any]) -> str:
+    return str(user.get("team_code", "")).lower()
+
+
+def _team_id_from_user(user: dict[str, Any]) -> int | None:
+    return _TEAM_ID_BY_CODE.get(_team_code(user))
+
+
+def _can_use_catalog(user: dict[str, Any], spec: CatalogView) -> bool:
+    """Autoriza leer/escribir solo en el catálogo del equipo autenticado."""
+    allowed_table = _TEAM_CATALOG_BY_CODE.get(_team_code(user))
+    return allowed_table == spec.table
+
+
 def list_catalog(conn: pymysql.connections.Connection, spec: CatalogView) -> None:
     """
     Lista *toda* la tabla de catálogo elegida.
@@ -191,10 +230,13 @@ def list_catalog(conn: pymysql.connections.Connection, spec: CatalogView) -> Non
         print("  (vacío)")
 
 
-def add_catalog_item(conn: pymysql.connections.Connection, spec: CatalogView) -> None:
+def add_catalog_item(conn: pymysql.connections.Connection, user: dict[str, Any], spec: CatalogView) -> None:
     """
     INSERT en catálogo. Profesor: igual que list_catalog — falta cruzar con el equipo del usuario.
     """
+    if not _can_use_catalog(user, spec):
+        print("Acceso denegado: solo puedes agregar en el catálogo de tu equipo.")
+        return
     _assert_catalog_table(spec.table)
     name = input("Nombre del ítem: ").strip()
     if not name:
@@ -207,36 +249,35 @@ def add_catalog_item(conn: pymysql.connections.Connection, spec: CatalogView) ->
     print("Guardado.")
 
 
-def list_notas_all_teams(conn: pymysql.connections.Connection) -> None:
+def list_notas_team(conn: pymysql.connections.Connection, user: dict[str, Any]) -> None:
     """
-    Lista notas de *todos* los equipos.
+    Lista notas del equipo autenticado.
 
     Profesor: en producción esto sería la filtración por RLS o WHERE team_id = %s del usuario.
     """
+    team_id = _team_id_from_user(user)
+    if team_id is None:
+        print("Equipo de usuario inválido.")
+        return
     with conn.cursor() as cur:
-        cur.execute(_SQL_LIST_NOTAS_ALL)
+        cur.execute(_SQL_LIST_NOTAS_BY_TEAM, (team_id,))
         rows = cur.fetchall()
-    print(f"\n--- {_TITLE_NOTAS_TODAS} ---")
+    print("\n--- Notas de investigación (tu equipo) ---")
     for row in rows:
         print(f"  [{row['id']}] [{row['equipo']}] {row['contenido']}")
     if not rows:
         print("  (vacío)")
 
 
-def add_nota_any_team(conn: pymysql.connections.Connection) -> None:
+def add_nota_team(conn: pymysql.connections.Connection, user: dict[str, Any]) -> None:
     """
-    INSERT en `notas` con team_id elegido por quien usa la app.
+    INSERT en `notas` del equipo autenticado.
 
     Profesor: en la matriz correcta, team_id debería ser siempre user['team_id'], sin preguntar.
     """
-    prompt = (
-        f"¿Equipo de la nota? {MenuOption.LISTAR_OVNIS.value}=OVNI "
-        f"{MenuOption.LISTAR_GHOSTS.value}=Ghosts {MenuOption.LISTAR_WIZARDS.value}=Wizards: "
-    )
-    key = input(prompt).strip()
-    team_id = _TEAM_ID_BY_LIST_KEY.get(key)
+    team_id = _team_id_from_user(user)
     if team_id is None:
-        print("Opción inválida.")
+        print("Equipo de usuario inválido.")
         return
     texto = input("Contenido de la nota: ").strip()
     if not texto:
@@ -258,8 +299,8 @@ def _print_menu(user: dict[str, Any]) -> None:
     )
     print(f"{MenuOption.AGREGAR_CATALOGO.value}) Agregar ítem a cualquier lista")
     print(
-        f"{MenuOption.LISTAR_NOTAS_TODAS.value}) Ver notas de todos los equipos   "
-        f"{MenuOption.AGREGAR_NOTA_CUALQUIER_EQUIPO.value}) Agregar nota a cualquier equipo"
+        f"{MenuOption.LISTAR_NOTAS_TODAS.value}) Ver notas de tu equipo   "
+        f"{MenuOption.AGREGAR_NOTA_CUALQUIER_EQUIPO.value}) Agregar nota a tu equipo"
     )
     print(f"{MenuOption.SALIR.value}) Salir")
 
@@ -283,18 +324,22 @@ def run_menu(conn: pymysql.connections.Connection, user: dict[str, Any]) -> None
         if choice == MenuOption.SALIR:
             break
         if choice in _CATALOG_BY_MENU:
-            list_catalog(conn, _CATALOG_BY_MENU[choice])
+            spec = _CATALOG_BY_MENU[choice]
+            if not _can_list_catalog(user, spec):
+                print("Acceso denegado: solo puedes listar el catálogo de tu equipo.")
+                continue
+            list_catalog(conn, spec)
         elif choice == MenuOption.AGREGAR_CATALOGO:
             sub = input("¿Lista? 1=ovnis 2=ghosts 3=wizards: ").strip()
             spec = _CATALOG_BY_LIST_KEY.get(sub)
             if spec is None:
                 print("Opción inválida.")
             else:
-                add_catalog_item(conn, spec)
+                add_catalog_item(conn, user, spec)
         elif choice == MenuOption.LISTAR_NOTAS_TODAS:
-            list_notas_all_teams(conn)
+            list_notas_team(conn, user)
         elif choice == MenuOption.AGREGAR_NOTA_CUALQUIER_EQUIPO:
-            add_nota_any_team(conn)
+            add_nota_team(conn, user)
 
 
 def main() -> int:
