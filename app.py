@@ -26,6 +26,7 @@ from enum import Enum
 from typing import Any, Final
 
 import pymysql
+import bcrypt
 
 # ---------------------------------------------------------------------------
 # Variables de entorno — nombres en constantes para no equivocarse al escribir
@@ -68,9 +69,9 @@ _CATALOG_TABLES: Final[frozenset[str]] = frozenset({Table.OVNIS, Table.GHOSTS, T
 # nunca pongan ahí un string que venga del input() sin validar.
 
 _SQL_LOGIN: Final[str] = (
-    "SELECT u.id, u.email, t.code AS team_code, t.display_name AS team_name "
+    "SELECT u.id, u.email, u.password_hash, t.code AS team_code, t.display_name AS team_name "
     "FROM users u JOIN teams t ON t.id = u.team_id "
-    "WHERE u.email = %s AND u.password_plain = %s"
+    "WHERE u.email = %s"
 )
 _SQL_SELECT_CATALOG: Final[str] = "SELECT id, name FROM {table} ORDER BY id"
 _SQL_INSERT_CATALOG: Final[str] = "INSERT INTO {table} (name) VALUES (%s)"
@@ -180,8 +181,12 @@ def login(conn: pymysql.connections.Connection) -> dict[str, Any] | None:
     email = input("Correo: ").strip().lower()
     password = input("Contraseña: ").strip()
     with conn.cursor() as cur:
-        cur.execute(_SQL_LOGIN, (email, password))
-        return cur.fetchone()
+        cur.execute(_SQL_LOGIN, (email,))
+        row = cur.fetchone()
+    if row and bcrypt.checkpw(password.encode("utf-8"), row["password_hash"].encode("utf-8")):
+        del row["password_hash"]
+        return row
+    return None
 
 
 def _assert_catalog_table(table: str) -> None:
