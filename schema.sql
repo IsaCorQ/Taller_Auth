@@ -17,12 +17,12 @@ INSERT INTO teams (id, code, display_name) VALUES
   (2, 'ghosts', 'UCE — Frente Espectral (desde 1971)'),
   (3, 'wizards', 'UCE — Frente Arcano (desde 1971)');
 
--- Contraseña en texto plano a propósito (taller etapa 2: hash).
--- Login en la app: correo + contraseña.
+-- Contraseña con hash bcrypt (taller etapa 2).
+-- Login en la app: correo + contraseña; se verifica con bcrypt.checkpw().
 CREATE TABLE users (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   email VARCHAR(255) NOT NULL UNIQUE,
-  password_plain VARCHAR(255) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
   team_id TINYINT UNSIGNED NOT NULL,
   FOREIGN KEY (team_id) REFERENCES teams (id)
 );
@@ -52,10 +52,11 @@ CREATE TABLE notas (
 );
 
 -- Usuarios demo (misma contraseña: demo123)
-INSERT INTO users (email, password_plain, team_id) VALUES
-  ('ovni@lab.local', 'demo123', 1),
-  ('ghosts@lab.local', 'demo123', 2),
-  ('wizards@lab.local', 'demo123', 3);
+-- Hash generado con: bcrypt.hashpw(b'demo123', bcrypt.gensalt()).decode()
+INSERT INTO users (email, password_hash, team_id) VALUES
+  ('ovni@lab.local', '$2b$12$KW2tZpsEShUMQYav9pMqqeFXTDnC5SbYzpaA6m6yis3jB0CWdQTJe', 1),
+  ('ghosts@lab.local', '$2b$12$KW2tZpsEShUMQYav9pMqqeFXTDnC5SbYzpaA6m6yis3jB0CWdQTJe', 2),
+  ('wizards@lab.local', '$2b$12$KW2tZpsEShUMQYav9pMqqeFXTDnC5SbYzpaA6m6yis3jB0CWdQTJe', 3);
 
 -- Registros “ocultos” inspirados en lugares y datos públicos del Campus Central Cartago (ficción de taller).
 INSERT INTO ovnis (name) VALUES
