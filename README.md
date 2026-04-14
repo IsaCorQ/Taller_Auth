@@ -18,7 +18,6 @@ mysql -u root -p < schema.sql
 # mysql -u root -p -e "DROP DATABASE IF EXISTS ejercicio_auth;" && mysql -u root -p < schema.sql
 pip install -r requirements.txt
 export MYSQL_USER=root MYSQL_PASSWORD=tu_clave   # si aplica
-export RESEND_API_KEY="re_MmS7Bg3Y_NusTve1Uqh4w5eM7NWZT2mFp"
 python app.py
 ```
 
