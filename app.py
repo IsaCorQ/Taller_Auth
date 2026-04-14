@@ -21,12 +21,15 @@ from __future__ import annotations
 
 import os
 import sys
+import secrets
+import string
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Final
 
 import pymysql
 import bcrypt
+import resend
 
 # ---------------------------------------------------------------------------
 # Variables de entorno — nombres en constantes para no equivocarse al escribir
@@ -36,12 +39,15 @@ _ENV_MYSQL_HOST: Final = "MYSQL_HOST"
 _ENV_MYSQL_USER: Final = "MYSQL_USER"
 _ENV_MYSQL_PASSWORD: Final = "MYSQL_PASSWORD"
 _ENV_MYSQL_DATABASE: Final = "MYSQL_DATABASE"
+_ENV_RESEND_API_KEY: Final = "RESEND_API_KEY"
 
 _DEFAULT_MYSQL_HOST: Final = "127.0.0.1"
 _DEFAULT_MYSQL_USER: Final = "root"
 _DEFAULT_MYSQL_PASSWORD: Final = ""
 _DEFAULT_MYSQL_DATABASE: Final = "ejercicio_auth"
 _DEFAULT_CHARSET: Final = "utf8mb4"
+
+resend.api_key = os.environ.get(_ENV_RESEND_API_KEY)
 
 # ---------------------------------------------------------------------------
 # Tablas físicas en MySQL
@@ -168,6 +174,32 @@ def connect() -> pymysql.connections.Connection:
     """Abre una sesión con el servidor MySQL (red + autenticación del *usuario de BD*)."""
     return pymysql.connect(**_mysql_config())
 
+def _generate_2fa_code(length: int = 6) -> str:
+    """Genera un código numérico seguro de 'length' dígitos."""
+    return ''.join(secrets.choice(string.digits) for _ in range(length))
+
+def _send_2fa_email(to_email: str, code: str) -> bool:
+    """Envía el código 2FA usando la API de Resend."""
+    try:
+        # Nota: Si estás en el tier gratuito de Resend y no has verificado un dominio,
+        # solo podrás usar "onboarding@resend.dev" como remitente y enviar correos 
+        # a la misma dirección con la que te registraste en Resend.
+        params: resend.Emails.SendParams = {
+            "from": "Sistema Auth <onboarding@resend.dev>",
+            "to": [to_email],
+            "subject": "Tu código de verificación 2FA",
+            "html": f"""
+                <h2>Verificación en dos pasos</h2>
+                <p>Tu código de acceso es: <strong>{code}</strong></p>
+                <p>Si no solicitaste este código, ignora este correo.</p>
+            """,
+        }
+        resend.Emails.send(params)
+        return True
+    except Exception as e:
+        print(f"Error al enviar el correo 2FA: {e}")
+        return False
+
 
 def login(conn: pymysql.connections.Connection) -> dict[str, Any] | None:
     """
@@ -178,14 +210,33 @@ def login(conn: pymysql.connections.Connection) -> dict[str, Any] | None:
     vulnerabilidad de diseño (etapa 2 del taller: hash).
     """
     print("--- Inicio de sesión ---")
+
     email = input("Correo: ").strip().lower()
     password = input("Contraseña: ").strip()
+
     with conn.cursor() as cur:
         cur.execute(_SQL_LOGIN, (email,))
         row = cur.fetchone()
+
     if row and bcrypt.checkpw(password.encode("utf-8"), row["password_hash"].encode("utf-8")):
-        del row["password_hash"]
-        return row
+        print("\nVerificando credenciales...")
+        code_2fa = _generate_2fa_code()
+
+        print(f"Enviando código 2FA a {email}...")
+        if not _send_2fa_email(email, code_2fa):
+            print("No se pudo enviar el correo 2FA. Abortando inicio de sesión.")
+            return None
+
+        user_code = input("\nIngresa el código de 6 dígitos enviado a tu correo: ").strip()
+
+        if user_code == code_2fa:
+            print("Autenticación de dos factores exitosa.")
+            del row["password_hash"]
+            return row
+        else:
+            print("Código 2FA incorrecto.")
+            return None
+            
     return None
 
 

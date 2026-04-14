@@ -54,7 +54,7 @@ CREATE TABLE notas (
 -- Usuarios demo (misma contraseña: demo123)
 -- Hash generado con: bcrypt.hashpw(b'demo123', bcrypt.gensalt()).decode()
 INSERT INTO users (email, password_hash, team_id) VALUES
-  ('ovni@lab.local', '$2b$12$KW2tZpsEShUMQYav9pMqqeFXTDnC5SbYzpaA6m6yis3jB0CWdQTJe', 1),
+  ('alejimenezc92@gmail.com', '$2b$12$KW2tZpsEShUMQYav9pMqqeFXTDnC5SbYzpaA6m6yis3jB0CWdQTJe', 1),
   ('ghosts@lab.local', '$2b$12$KW2tZpsEShUMQYav9pMqqeFXTDnC5SbYzpaA6m6yis3jB0CWdQTJe', 2),
   ('wizards@lab.local', '$2b$12$KW2tZpsEShUMQYav9pMqqeFXTDnC5SbYzpaA6m6yis3jB0CWdQTJe', 3);
 
